@@ -87,10 +87,33 @@ def createTorchCNNmodel(name, numclasses, img_shape, pretrained=True):
         return create_resnetmodel1(numclasses, img_shape)
     elif name=='customresnet':
         return setupCustomResNet(numclasses, 'resnet50')
+    elif name == 'squeezenet1_0':
+        return create_squeezenet(numclasses, pretrained)
     elif name in model_names:
         #return models.__dict__[name](pretrained=pretrained)
         #return create_torchvisionmodel(name, numclasses, pretrained)
         return create_torchvisionmodel(name, numclasses, freezeparameters=True, pretrained=pretrained)
+
+def create_squeezenet(num_classes, pretrained=True):
+    model = models.squeezenet1_0(pretrained=pretrained)
+    model.features[0] = nn.Conv2d(3, 96, kernel_size=(5,5), stride=(2,2))
+
+    model.features[5] = nn.Sequential(
+        nn.Conv2d(128, 32, kernel_size=(1,1), stride=(1,1)),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(32, 128, kernel_size=(1,1), stride=(1,1)),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+        nn.ReLU(inplace=True),
+    )
+    model.classifier = nn.Sequential(
+        nn.Dropout(p=0.7),
+        nn.Conv2d(512, num_classes, kernel_size=1),  
+        nn.LeakyReLU(inplace=True),
+        nn.AdaptiveAvgPool2d((1, 1))
+    )
+    model.num_classes = num_classes
+    return model
 
 def create_vggmodel1(numclasses, img_shape):
     # Load the pretrained model from pytorch
@@ -113,7 +136,8 @@ def create_vggmodel1(numclasses, img_shape):
     last_layer = nn.Linear(n_inputs, numclasses)
 
     vgg16.classifier[6] = last_layer
-    
+    return vgg16
+
 class VGG(nn.Module):
     def __init__(self, features, output_dim):
         super().__init__()
@@ -243,6 +267,7 @@ class CNNNet1(nn.Module): #32*32 image input
         self.dropout = nn.Dropout(0.25)
 
     def forward(self, x):
+        print(x.shape)
         # add sequence of convolutional and max pooling layers
         x = self.pool(F.relu(self.conv1(x))) # output size: 32*32*16, pool=16*16*16
         x = self.pool(F.relu(self.conv2(x))) # output 16*16*16, pool=8*8*16
@@ -296,7 +321,7 @@ class MLP(nn.Module): #for MNIST dataset
 
 def create_mlpmodel1(numclasses, img_shape):
     #for MNIST dataset
-    INPUT_DIM = img_shape[1]*img_shape[2]#28 * 28
+    INPUT_DIM = img_shape[0]*img_shape[1]*img_shape[2]#28 * 28
     OUTPUT_DIM = numclasses
     model = MLP(INPUT_DIM, OUTPUT_DIM)
     print(model)
@@ -308,23 +333,23 @@ def create_mlpmodel1(numclasses, img_shape):
 
 
 class LeNet(nn.Module):#for 28*28 MNIST dataset
-    def __init__(self, output_dim):
+    def __init__(self, output_dim, x):
         super().__init__()
-
-        self.conv1 = nn.Conv2d(in_channels = 1, 
+        
+        self.conv1 = nn.Conv2d(in_channels = 3, 
                                out_channels = 6, 
                                kernel_size = 5)
-        
+    
+
         self.conv2 = nn.Conv2d(in_channels = 6, 
                                out_channels = 16, 
                                kernel_size = 5)
-        
-        self.fc_1 = nn.Linear(16 * 4 * 4, 120)
+
+        self.fc_1 = nn.Linear(400, 120)
         self.fc_2 = nn.Linear(120, 84)
         self.fc_3 = nn.Linear(84, output_dim)
 
     def forward(self, x):
-
         #x = [batch size, 1, 28, 28]
         
         x = self.conv1(x)
@@ -374,7 +399,7 @@ class LeNet(nn.Module):#for 28*28 MNIST dataset
 def create_lenet(numclasses, img_shape):
     #for MNIST dataset
     OUTPUT_DIM = numclasses
-    model = LeNet(OUTPUT_DIM)
+    model = LeNet(OUTPUT_DIM, img_shape)
     print(model)
 
     num_trainparameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
